@@ -2,6 +2,9 @@ package com.ashish.elasticsearch_project.sec05;
 
 import co.elastic.clients.elasticsearch._types.aggregations.*;
 import co.elastic.clients.elasticsearch._types.query_dsl.*;
+import co.elastic.clients.elasticsearch.core.search.CompletionSuggester;
+import co.elastic.clients.elasticsearch.core.search.FieldSuggester;
+import co.elastic.clients.elasticsearch.core.search.Suggester;
 import com.ashish.elasticsearch_project.AbstractTest;
 import com.ashish.elasticsearch_project.sec05.entity.Garment;
 import com.ashish.elasticsearch_project.sec05.repository.GarmentRepository;
@@ -16,8 +19,11 @@ import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.data.elasticsearch.core.query.Criteria;
 import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
+import org.springframework.data.elasticsearch.core.query.FetchSourceFilter;
+import org.springframework.data.elasticsearch.core.suggest.response.Suggest;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public class NativeAndCriteriaQueryTest extends AbstractTest {
@@ -132,5 +138,30 @@ public class NativeAndCriteriaQueryTest extends AbstractTest {
                         a -> a.getAggregate()
                 ));
         this.print().accept(map);
+    }
+
+    @Test
+    public void suggestion(){
+
+        var fieldSuggester = FieldSuggester.of(b -> b.prefix("ca").completion(
+                CompletionSuggester.of(csb -> csb.field("name.completion").skipDuplicates(true).size(10))
+        ));
+        var suggester = Suggester.of(b -> b.suggesters("product-suggest",fieldSuggester));
+
+        var query = NativeQuery.builder()
+                .withSuggester(suggester)
+                .withMaxResults(0)
+                .withSourceFilter(FetchSourceFilter.of(b -> b.withExcludes("*")))
+                .build();
+
+        var searchHits = this.elasticsearchOperations.search(query, Garment.class);
+        var suggestions = searchHits.getSuggest().getSuggestion("product-suggest")
+                .getEntries()
+                .getFirst()
+                .getOptions()
+                .stream()
+                .map(Suggest.Suggestion.Entry.Option::getText)
+                .collect(Collectors.toSet());
+        Assertions.assertEquals(Set.of("Casual Wrap","Casual Maxi"),suggestions);
     }
 }
